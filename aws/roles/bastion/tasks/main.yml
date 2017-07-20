@@ -1,0 +1,34 @@
+---
+# tasks file for ec2_facts
+
+
+- name: Gather facts about ec2 instances
+  ec2_remote_facts:
+    aws_access_key: "{{ ec2_access_key }}"
+    aws_secret_key: "{{ ec2_secret_key }}"
+    region: "{{ aws_region }}"
+  register: ec2
+
+- name: Create ssh.cfg for connecting through bastion instance 
+  template:
+    src: ssh_config.j2
+    dest: ./ssh.cfg
+  vars:
+    bastion_public_ip_address: "{{ item.public_ip_address }}"
+  with_items: "{{ ec2.instances }}"
+  when: 
+  - item.tags.Name.find('bastion')!= -1
+  - item.state == "running"
+
+- name: Add web servers instanses to web_servers group
+  add_host:
+    hostname: "{{ item.private_ip_address }}"
+    groupname: web_servers
+  with_items: "{{ ec2.instances }}"
+  when:
+  - item.tags.Name.find('web')!= -1
+  - item.state == "running"
+
+
+
+

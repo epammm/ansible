@@ -1,0 +1,8 @@
+---
+# defaults file for cloudformation
+
+default_availability_zone: "us-east-1a"
+default_image_type: ami-9e2f0988
+default_instance_type: t2.micro
+subnet_ip_block: 172.30.1.0/19
+key_name: test

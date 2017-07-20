@@ -1,0 +1,309 @@
+AWSTemplateFormatVersion: 2010-09-09
+
+Parameters:
+  AvailableZones:
+    Description: My Availability Zones
+    Type: String
+    Default: eu-west-1a
+  ImageType:
+    Description: Image type for instance
+    Type: 'AWS::EC2::Image::Id'
+    Default: ami-02ace471
+  InstanceType:
+    Description: 'WebServer EC2 instance type.'
+    Type: String
+    Default: t2.micro
+  VPCSubnetIpBlocks:
+    Description: Comma-delimited list of VPC subnets
+    Type: String
+    Default: 172.30.1.0/19
+  KeyName:
+    Description: The EC2 Key Pair to allow SSH access to the instances
+    Type: 'AWS::EC2::KeyPair::KeyName'
+    Default: test
+
+Resources:
+  VPC:
+    Type: 'AWS::EC2::VPC'
+    Properties:
+      CidrBlock: !Ref VPCSubnetIpBlocks
+      EnableDnsHostnames: 'true'
+  GatewayToInternet:
+    Type: 'AWS::EC2::InternetGateway'
+    DependsOn: VPC
+  GatewayAttachment:
+    Type: 'AWS::EC2::VPCGatewayAttachment'
+    DependsOn: GatewayToInternet
+    Properties:
+      InternetGatewayId: !Ref GatewayToInternet
+      VpcId: !Ref VPC
+  EIP:
+    Type: 'AWS::EC2::EIP'
+    DependsOn: VPC
+    Properties:
+      Domain: VPC
+  NatGateway:
+    DependsOn: pbSubnet 
+    Type: 'AWS::EC2::NatGateway'
+    Properties:
+      AllocationId: !GetAtt EIP.AllocationId
+      SubnetId: !Ref pbSubnet
+  prRouteTable:
+    Type: 'AWS::EC2::RouteTable'
+    DependsOn: GatewayAttachment
+    Properties:
+      VpcId: !Ref VPC
+  pbRouteTable:
+    Type: 'AWS::EC2::RouteTable'
+    DependsOn: GatewayAttachment
+    Properties:
+      VpcId: !Ref VPC
+  prSubnet:    
+    Type: 'AWS::EC2::Subnet'
+    DependsOn: prRouteTable
+    Properties:
+      VpcId: !Ref VPC
+      AvailabilityZone: !Ref AvailableZones
+      CidrBlock: 172.30.1.0/24
+  prSubnetRouteTableAssociation:
+    Type: 'AWS::EC2::SubnetRouteTableAssociation'
+    DependsOn: prSubnet
+    Properties:
+      SubnetId: !Ref prSubnet
+      RouteTableId: !Ref prRouteTable
+  pbSubnet:
+    Type: 'AWS::EC2::Subnet'
+    DependsOn: pbRouteTable
+    Properties:
+      VpcId: !Ref VPC
+      AvailabilityZone: !Ref AvailableZones
+      CidrBlock: 172.30.2.0/24
+  pbSubnetRouteTableAssociation:
+    Type: 'AWS::EC2::SubnetRouteTableAssociation'
+    DependsOn: pbSubnet
+    Properties:
+      SubnetId: !Ref pbSubnet
+      RouteTableId: !Ref pbRouteTable
+  pbRoute:
+    Type: 'AWS::EC2::Route'
+    DependsOn: pbRouteTable
+    Properties:
+      RouteTableId: !Ref pbRouteTable
+      GatewayId: !Ref GatewayToInternet
+      DestinationCidrBlock: 0.0.0.0/0
+  prRoute:
+    Type: 'AWS::EC2::Route'
+    DependsOn: NatGateway
+    Properties:
+      RouteTableId: !Ref prRouteTable
+      NatGatewayId: !Ref NatGateway
+      DestinationCidrBlock: 0.0.0.0/0
+  BastionSecurityGroup:
+    Type: 'AWS::EC2::SecurityGroup'
+    DependsOn: VPC
+    Properties:
+      GroupDescription: Custom security group for custom Bastion Server
+      GroupName: BastionSecurityGroup
+      VpcId: !Ref VPC 
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: '22'
+          ToPort: '22'
+          CidrIp: 213.184.243.0/24
+        - IpProtocol: tcp
+          FromPort: '22'
+          ToPort: '22'
+          CidrIp: 217.21.56.0/24 
+        - IpProtocol: tcp
+          FromPort: '22'
+          ToPort: '22'
+          CidrIp: 217.21.63.0/24 
+        - IpProtocol: tcp
+          FromPort: '22'
+          ToPort: '22'
+          CidrIp: 213.184.231.0/24 
+        - IpProtocol: tcp
+          FromPort: '22'
+          ToPort: '22'
+          CidrIp: 86.57.255.88/29 
+        - IpProtocol: tcp
+          FromPort: '22'
+          ToPort: '22'
+          CidrIp: 194.158.197.0/29
+      SecurityGroupEgress:
+        - IpProtocol: "-1"
+          CidrIp: 0.0.0.0/0  
+  ELBSecurityGroup:
+    Type: 'AWS::EC2::SecurityGroup'
+    DependsOn: prRoute
+    Properties:
+      GroupDescription: Custom security group for custom Elastic Load Balanser
+      GroupName: ELBSecurityGroup
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: '80'
+          ToPort: '80'
+          CidrIp: 0.0.0.0/0
+      SecurityGroupEgress:
+        - IpProtocol: tcp
+          FromPort: '80'
+          ToPort: '80'
+          CidrIp: 0.0.0.0/0
+  VPCSecurityGroup:
+    Type: 'AWS::EC2::SecurityGroup'
+    DependsOn: VPC
+    Properties:
+      GroupDescription: Custom security group for custom VPC
+      GroupName: VPCSecurityGroup
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: '22'
+          ToPort: '22'
+          CidrIp: !Ref VPCSubnetIpBlocks
+        - IpProtocol: tcp
+          FromPort: '80'
+          ToPort: '80'
+          CidrIp: !Ref VPCSubnetIpBlocks          
+      SecurityGroupEgress:
+        - IpProtocol: "-1"
+          CidrIp: 0.0.0.0/0
+  MyLaunchConfig:
+    Type: 'AWS::AutoScaling::LaunchConfiguration'
+    DependsOn: ELBSecurityGroup
+    Properties:
+      ImageId: !Ref ImageType
+      KeyName: !Ref KeyName
+      AssociatePublicIpAddress: 'false'
+      SecurityGroups: 
+        - !Ref VPCSecurityGroup
+      InstanceType: !Ref InstanceType
+      InstanceMonitoring: 'false'
+      BlockDeviceMappings:
+        - DeviceName: "/dev/sda1"
+          Ebs:
+            VolumeSize: "10"
+            DeleteOnTermination: "true"
+      UserData: !Base64
+        'Fn::Join':
+          - ""
+          - - |
+              #!/bin/bash
+            - |
+              sudo yum install -y httpd wget
+            - |
+              cd /var/www/html
+            - |
+              sudo wget https://s3.amazonaws.com/burakovsky/index.html
+            - |
+              sudo sed -i 's/XXXXX/'"$HOSTNAME"'/g' index.html
+            - |
+              sudo systemctl enable httpd
+            - |
+              sudo systemctl start httpd
+            - |+        
+  ELB:
+    Type: 'AWS::ElasticLoadBalancing::LoadBalancer'
+    DependsOn: MyLaunchConfig
+    Properties:
+      CrossZone: 'true'
+      Subnets: 
+        - !Ref pbSubnet
+      SecurityGroups:
+        - !Ref ELBSecurityGroup
+      LoadBalancerName: TEST-balancer
+      HealthCheck:
+        Target: HTTP:80/index.html
+        HealthyThreshold: '10'
+        UnhealthyThreshold: '5'
+        Interval: '30'
+        Timeout: '20'
+      Listeners:
+        - LoadBalancerPort: '80'
+          Protocol: HTTP
+          InstancePort: '80' 
+  AutoScailingGroup: 
+    Type: "AWS::AutoScaling::AutoScalingGroup"
+    DependsOn: ELB
+    Properties: 
+      VPCZoneIdentifier:
+        - !Ref prSubnet
+      LaunchConfigurationName: 
+        Ref: "MyLaunchConfig"
+      MinSize: "2"
+      MaxSize: "5"
+      HealthCheckGracePeriod: '300'
+      LoadBalancerNames: 
+        - Ref: "ELB"
+  IncreaseScaling: 
+    Type: "AWS::AutoScaling::ScalingPolicy"
+    DependsOn: AutoScailingGroup
+    Properties: 
+      AdjustmentType: "ChangeInCapacity"
+      AutoScalingGroupName: !Ref "AutoScailingGroup"
+      PolicyType: "StepScaling"
+      MetricAggregationType: "Average"
+      EstimatedInstanceWarmup: "60"
+      StepAdjustments: 
+        - MetricIntervalLowerBound: "0"
+          ScalingAdjustment: "1"
+  DecreaseScaling: 
+    Type: "AWS::AutoScaling::ScalingPolicy"
+    DependsOn: AutoScailingGroup
+    Properties: 
+      AdjustmentType: "ChangeInCapacity"
+      AutoScalingGroupName: !Ref "AutoScailingGroup"
+      PolicyType: "StepScaling"
+      MetricAggregationType: "Average"
+      EstimatedInstanceWarmup: "60"
+      StepAdjustments: 
+        - MetricIntervalUpperBound: "0"
+          ScalingAdjustment: "-1"
+  HighRequestCountAlarm:
+    Type: AWS::CloudWatch::Alarm
+    DependsOn: IncreaseScaling
+    Properties:
+      AlarmDescription: Sum of request count is more then 1000
+      AlarmName: HighRequestCountAlarm
+      Dimensions:
+        - Name: Service
+          Value: ELB
+      MetricName: RequestCount
+      Statistic: Sum
+      Period: '300'
+      EvaluationPeriods: '1'
+      Namespace: AWS/ELB
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      Threshold: '1000'
+      ActionsEnabled: 'true'
+      AlarmActions:
+        - Ref: IncreaseScaling
+      OKActions: 
+        - Ref: DecreaseScaling
+  BastionInstance:
+    Type: "AWS::EC2::Instance"
+    DependsOn: BastionSecurityGroup
+    Properties: 
+      EbsOptimized: 'false'  
+      ImageId: !Ref ImageType
+      InstanceType: !Ref InstanceType
+      KeyName: !Ref KeyName
+      Monitoring: 'false'
+      NetworkInterfaces: 
+        - AssociatePublicIpAddress: "true"
+          DeviceIndex: "0"
+          GroupSet: 
+            - Ref: "BastionSecurityGroup"
+          SubnetId: 
+            Ref: "pbSubnet"
+           
+Outputs:
+  URL:
+    Description: The URL of the website
+    Value: !Join 
+      - ''
+      - - 'http://'
+        - !GetAtt 
+          - ELB
+          - DNSName

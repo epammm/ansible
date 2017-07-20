@@ -1,0 +1,13 @@
+Host {{ bastion_public_ip_address }}
+     Hostname {{ bastion_public_ip_address }}
+     ProxyCommand none
+     PasswordAuthentication no
+     ControlMaster auto
+     ControlPersist 5m
+
+Host *
+    ProxyCommand           ssh -q -A ec2-user@{{ bastion_public_ip_address }} nc %h %p
+    User                   ec2-user
+    IdentityFile           ~/.ssh/aws.pem
+    StrictHostKeyChecking no
+    UserKnownHostsFile /dev/null

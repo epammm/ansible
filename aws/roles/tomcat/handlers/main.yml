@@ -1,0 +1,6 @@
+- name: RESTART TOMCAT
+  service:
+    name: tomcat
+    state: restarted
+  become: yes
+  become_user: "{{tomcat_user}}"
