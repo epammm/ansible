@@ -1,0 +1,8 @@
+---
+# tasks file for filebeat
+
+- name: INSTALL FILEBEAT
+  yum:
+    name: https://artifacts.elastic.co/downloads/beats/filebeat/filebeat-5.5.1-x86_64.rpm
+    state: present
+

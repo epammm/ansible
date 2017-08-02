@@ -9,10 +9,19 @@
   roles:
   - { role: bastion }
 
-- name: Configure web servers
-  hosts: web_servers
+- name: Configure ELK server
+  hosts: elk_servers
   become: true
   roles:
-  - {role: tomcat}
+  - { role: java }
+  - { role: elk }
+
+#- name: Configure web servers
+#  hosts: web_servers
+#  become: true
+#  roles:
+#  - {role: tomcat}
+#  - {role: filebeat}
+
 
  

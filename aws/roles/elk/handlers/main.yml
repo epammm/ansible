@@ -1,0 +1,18 @@
+---
+# handlers file for elk
+- name: RESTART ELASTICSEARCH
+  service:
+    name: elasticsearch
+    state: restarted
+  
+- name: RESTART KIBANA
+  service:
+    name: kibana
+    state: restarted
+
+
+- name: RESTART LOGSTASH
+  service:
+    name: logstash
+    state: restarted
+

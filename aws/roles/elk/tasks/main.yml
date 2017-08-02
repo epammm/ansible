@@ -1,0 +1,86 @@
+---
+# tasks file for elasticsearch
+
+- name: ADD YUM REPOSITORY
+  yum_repository:
+    name: "{{ item }}"
+    description: "{{ item }} repository for 5.x packages"
+    baseurl: https://artifacts.elastic.co/packages/5.x/yum
+    gpgcheck: yes
+    gpgkey: https://artifacts.elastic.co/GPG-KEY-elasticsearch
+    enabled: yes
+  with_items:
+    - "{{ elk_services }}"
+    
+- name: INSTALL ELK SERVICES
+  package:
+    name: "{{ item }}"
+    state: present
+  with_items:
+    - "{{ elk_services }}"
+
+- name: START ELK SERVICES
+  service: 
+    name: "{{ item }}"
+    enabled: yes
+    state: started
+  with_items:
+    - "{{ elk_services }}"
+
+- name: CHANGE ELASTICSEARCH CONFIGURATION
+  lineinfile:
+    dest: /etc/elasticsearch/elasticsearch.yml
+    regexp: '^#network.host'
+    line: 'network.host: localhost'
+    backrefs: yes
+  notify: RESTART ELASTICSEARCH
+
+- name: CHANGE KIBANA CONFIGURATION
+  lineinfile:
+    dest: /etc/kibana/kibana.yml
+    regexp: "{{ item.regexp }}"
+    line: "{{ item.line }}"
+    backrefs: yes
+  with_items:
+    - { regexp: '^#server.host:', line: "server.host: {{ ansible_eth0.ipv4.address }}" }
+    - { regexp: '^#server.port:', line: "server.port: 8080" }
+  notify: RESTART KIBANA
+
+- name: CHANGE OPENSSL CONFIG
+  lineinfile:
+    dest: /etc/pki/tls/openssl.cnf
+    insertbefore: '^# Extensions for a typical CA'
+    line: "subjectAltName = IP: {{ ansible_eth0.ipv4.address }}"
+
+- name: GENERATE SSL CERTIFICATE
+  shell: openssl req -config /etc/pki/tls/openssl.cnf -x509 -days 3650 -batch -nodes -newkey rsa:2048 -keyout private/logstash-forwarder.key -out certs/logstash-forwarder.crt
+  args:
+    chdir: /etc/pki/tls
+    creates: /etc/pki/tls/certs/logstash-forwarder.crt
+
+- name: COPY LOGSTASH CONFIGS
+  copy:
+    src: "{{ item }}"
+    dest: /etc/logstash/conf.d/
+  with_fileglob:
+    - logstash/*
+  notify: RESTART LOGSTASH
+
+- name: DOWNLOAD KIBANA DASHBOARDS FOR FILEBEAT
+  unarchive:
+    src: https://download.elastic.co/beats/dashboards/beats-dashboards-1.1.0.zip
+    dest: /opt
+    remote_src: True
+
+- name: INSTALL DASHBOARDS
+  shell: ./load.sh
+  args:
+    chdir: /opt/beats-dashboards-1.1.0
+
+- name: LOAD FILEBEAT INDEX TEMPLATE
+  uri:
+    url: http://localhost:9200/_template/filebeat?pretty
+    method: PUT
+    body: "{{ lookup('file','filebeat-index-template.json') }}"
+    body_format: json
+

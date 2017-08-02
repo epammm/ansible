@@ -1,0 +1,12 @@
+---
+# tasks file for java
+
+- name: INSTALLING JAVA
+  yum: 
+    name: '{{java_version}}'
+    state: present
+
+- name: correct java version selected
+  alternatives:
+    name: java
+    path: /usr/lib/jvm/jre-1.8.0-openjdk.x86_64/bin/java
